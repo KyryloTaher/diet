@@ -19,6 +19,7 @@ def safe_insert(cursor, insert_query, row, log_msg):
         logging.info("%s - Row data: %s - Error: %s", log_msg, row, e)
 
 def create_tables(conn):
+    print("Creating database tables...")
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON;")
     cursor.execute("DROP TABLE IF EXISTS food_nutrient;")
@@ -66,11 +67,14 @@ def create_tables(conn):
         """
     )
     conn.commit()
+    print("Tables created.")
 
 def import_csv_data(conn, food_csv, food_nutrient_csv, nutrient_csv):
     cursor = conn.cursor()
+    print(f"Importing food data from {food_csv}...")
     with open(food_csv, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        food_count = 0
         insert_query = (
             "INSERT INTO food (fdc_id, data_type, description, food_category_id, publication_date) "
             "VALUES (?, ?, ?, ?, ?);"
@@ -89,10 +93,14 @@ def import_csv_data(conn, food_csv, food_nutrient_csv, nutrient_csv):
                     ),
                     "Could not insert into food",
                 )
+                food_count += 1
             else:
                 logging.info("Skipped non-foundation_food row in food.csv: %s", row)
+    print(f"Inserted {food_count} food rows.")
+    print(f"Importing nutrient data from {nutrient_csv}...")
     with open(nutrient_csv, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        nutr_count = 0
         insert_query = "INSERT INTO nutrient (nutrient_id, name, unit_name, nutrient_nbr, rank) VALUES (?, ?, ?, ?, ?);"
         for row in reader:
             safe_insert(
@@ -107,8 +115,12 @@ def import_csv_data(conn, food_csv, food_nutrient_csv, nutrient_csv):
                 ),
                 "Could not insert into nutrient",
             )
+            nutr_count += 1
+    print(f"Inserted {nutr_count} nutrient rows.")
+    print(f"Importing food nutrient data from {food_nutrient_csv}...")
     with open(food_nutrient_csv, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        fn_count = 0
         insert_query = (
             "INSERT INTO food_nutrient (fdc_id, nutrient_id, amount, data_points, derivation_id, min, max, median, footnote, min_year_acquired) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
@@ -131,7 +143,10 @@ def import_csv_data(conn, food_csv, food_nutrient_csv, nutrient_csv):
                 ),
                 "Could not insert into food_nutrient",
             )
+            fn_count += 1
     conn.commit()
+    print(f"Inserted {fn_count} food nutrient rows.")
+    print("Data import complete.")
 
 def ensure_working_directory():
     user_home = os.path.expanduser("~")
@@ -139,6 +154,7 @@ def ensure_working_directory():
     os.makedirs(target, exist_ok=True)
     os.chdir(target)
     logging.basicConfig(filename=LOG_FILENAME, level=logging.INFO)
+    print(f"Working directory: {target}")
     return target
 
 class BuildDBApp:
@@ -188,6 +204,7 @@ class BuildDBApp:
         food_csv = self.food_entry.get()
         fn_csv = self.fn_entry.get()
         nutrient_csv = self.nutrient_entry.get()
+        print(f"Building database using files: {food_csv}, {fn_csv}, {nutrient_csv}")
         if not all(map(os.path.isfile, [food_csv, fn_csv, nutrient_csv])):
             messagebox.showerror("Error", "One or more CSV files do not exist")
             return
@@ -197,11 +214,14 @@ class BuildDBApp:
         create_tables(conn)
         import_csv_data(conn, food_csv, fn_csv, nutrient_csv)
         conn.close()
-        messagebox.showinfo("Done", f"Database created at {os.path.abspath(DB_FILENAME)}")
+        msg = f"Database created at {os.path.abspath(DB_FILENAME)}"
+        messagebox.showinfo("Done", msg)
+        print(msg)
 
 
 def main():
     workdir = ensure_working_directory()
+    print(f"Using working directory {workdir}")
     root = tk.Tk()
     app = BuildDBApp(root)
     root.mainloop()
