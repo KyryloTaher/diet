@@ -8,6 +8,9 @@ import itertools
 import json
 
 DB_FILENAME = "usda.db"
+WORKDIR = os.path.join(os.path.expanduser("~"), "projects", "diet")
+LAST_SETUP_FILE = os.path.join(WORKDIR, "last_setup.json")
+DB_PATH = os.path.join(WORKDIR, DB_FILENAME)
 
 class DietApp:
     def __init__(self, root):
@@ -156,17 +159,18 @@ class DietApp:
             "product_constraints_text": self.product_constraints_text.get("1.0", tk.END),
             "supplement_text": self.supplement_text.get("1.0", tk.END)
         }
+        os.makedirs(WORKDIR, exist_ok=True)
         try:
-            with open("last_setup.json", "w", encoding="utf-8") as f:
+            with open(LAST_SETUP_FILE, "w", encoding="utf-8") as f:
                 json.dump(setup, f)
         except Exception as e:
             print(f"Could not save setup: {e}")
 
     def load_setup(self):
-        if not os.path.exists("last_setup.json"):
+        if not os.path.exists(LAST_SETUP_FILE):
             return
         try:
-            with open("last_setup.json", "r", encoding="utf-8") as f:
+            with open(LAST_SETUP_FILE, "r", encoding="utf-8") as f:
                 setup = json.load(f)
             self.price_text.insert("1.0", setup.get("price_text", ""))
             self.raw_price_text.insert("1.0", setup.get("raw_price_text", ""))
@@ -183,7 +187,7 @@ class DietApp:
         query = self.search_entry.get().strip()
         if not query:
             return
-        conn = sqlite3.connect(DB_FILENAME)
+        conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         like_query = f"%{query}%"
         rows = cur.execute(
@@ -331,7 +335,7 @@ class DietApp:
                 continue
         self.supplement_data = supplement_data
 
-        conn = sqlite3.connect(DB_FILENAME)
+        conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         query_foods = "SELECT fdc_id, description FROM food WHERE data_type = 'foundation_food'"
         all_food_rows = cur.execute(query_foods).fetchall()
@@ -696,6 +700,7 @@ class DietApp:
             messagebox.showerror("Error", f"Could not write report: {e}")
 
 def main():
+    os.makedirs(WORKDIR, exist_ok=True)
     root = tk.Tk()
     app = DietApp(root)
     root.mainloop()
