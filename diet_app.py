@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
-import pulp
+import pulp  # type: ignore
 import csv
 import os
 import itertools
@@ -12,8 +12,9 @@ WORKDIR = os.path.join(os.path.expanduser("~"), "projects", "diet")
 LAST_SETUP_FILE = os.path.join(WORKDIR, "last_setup.json")
 DB_PATH = os.path.join(WORKDIR, DB_FILENAME)
 
+
 class DietApp:
-    def __init__(self, root):
+    def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Diet Generator (with Supplements as Food Items)")
 
@@ -32,6 +33,7 @@ class DietApp:
         self.calorie_min = None
         self.calorie_max = None
         self.custom_product_constraints = {}
+        self.custom_nutrient_sources = {}
         self.supplement_data = {}
         self.selected_fdc_id = None
 
@@ -42,6 +44,9 @@ class DietApp:
         main_frame.columnconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
 
+        # -------------------------------
+        # Left side: Scrollable input area
+        # -------------------------------
         left_canvas = tk.Canvas(main_frame)
         left_canvas.grid(row=0, column=0, sticky="nsew")
         left_scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=left_canvas.yview)
@@ -54,11 +59,17 @@ class DietApp:
             lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all"))
         )
 
+        # -------------------------------
+        # Right side: Output area
+        # -------------------------------
         self.right_frame = ttk.Frame(main_frame)
         self.right_frame.grid(row=0, column=1, sticky="nsew")
         self.right_frame.columnconfigure(0, weight=1)
         self.right_frame.rowconfigure(1, weight=1)
 
+        # -------------------------------
+        # Add Input Widgets to the Left Scrollable Frame
+        # -------------------------------
         row = 0
         ttk.Label(self.left_scrollable_frame, text="Search Product:").grid(row=row, column=0, sticky="w")
         row += 1
@@ -128,6 +139,11 @@ class DietApp:
         self.supplement_text = tk.Text(self.left_scrollable_frame, width=40, height=4)
         self.supplement_text.grid(row=row, column=0, padx=5, pady=5, sticky="w")
         row += 1
+        ttk.Label(self.left_scrollable_frame, text="Nutrient Source Constraints (nutrient_id: fdc_id1,fdc_id2; one per line):").grid(row=row, column=0, sticky="w")
+        row += 1
+        self.nutrient_source_constraints_text = tk.Text(self.left_scrollable_frame, width=40, height=4)
+        self.nutrient_source_constraints_text.grid(row=row, column=0, padx=5, pady=5, sticky="w")
+        row += 1
         generate_button = ttk.Button(self.left_scrollable_frame, text="Generate Base Diet", command=self.generate_diet)
         generate_button.grid(row=row, column=0, pady=5, sticky="w")
         row += 1
@@ -137,6 +153,9 @@ class DietApp:
         report_button = ttk.Button(self.left_scrollable_frame, text="Generate Report", command=self.generate_report)
         report_button.grid(row=row, column=0, pady=5, sticky="w")
 
+        # -------------------------------
+        # Add Output Widget to the Right Frame
+        # -------------------------------
         ttk.Label(self.right_frame, text="Final Diet Output:").grid(row=0, column=0, sticky="w")
         self.output_text = tk.Text(self.right_frame, width=80, height=40, state="normal")
         self.output_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
@@ -144,11 +163,14 @@ class DietApp:
         self.load_setup()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    def on_close(self):
+    # --------------------------------------------------
+    # Persistence helpers
+    # --------------------------------------------------
+    def on_close(self) -> None:
         self.save_setup()
         self.root.destroy()
 
-    def save_setup(self):
+    def save_setup(self) -> None:
         setup = {
             "price_text": self.price_text.get("1.0", tk.END),
             "raw_price_text": self.raw_price_text.get("1.0", tk.END),
@@ -157,7 +179,8 @@ class DietApp:
             "calorie_min": self.calorie_min_entry.get(),
             "calorie_max": self.calorie_max_entry.get(),
             "product_constraints_text": self.product_constraints_text.get("1.0", tk.END),
-            "supplement_text": self.supplement_text.get("1.0", tk.END)
+            "supplement_text": self.supplement_text.get("1.0", tk.END),
+            "nutrient_source_constraints_text": self.nutrient_source_constraints_text.get("1.0", tk.END),
         }
         os.makedirs(WORKDIR, exist_ok=True)
         try:
@@ -166,7 +189,7 @@ class DietApp:
         except Exception as e:
             print(f"Could not save setup: {e}")
 
-    def load_setup(self):
+    def load_setup(self) -> None:
         if not os.path.exists(LAST_SETUP_FILE):
             return
         try:
@@ -180,10 +203,14 @@ class DietApp:
             self.calorie_max_entry.insert(0, setup.get("calorie_max", ""))
             self.product_constraints_text.insert("1.0", setup.get("product_constraints_text", ""))
             self.supplement_text.insert("1.0", setup.get("supplement_text", ""))
+            self.nutrient_source_constraints_text.insert("1.0", setup.get("nutrient_source_constraints_text", ""))
         except Exception as e:
             print(f"Could not load setup: {e}")
 
-    def search_products(self):
+    # --------------------------------------------------
+    # Product search and management helpers
+    # --------------------------------------------------
+    def search_products(self) -> None:
         query = self.search_entry.get().strip()
         if not query:
             return
@@ -199,7 +226,7 @@ class DietApp:
         for fid, desc in rows:
             self.search_results.insert(tk.END, f"{fid}: {desc}")
 
-    def on_result_select(self, event):
+    def on_result_select(self, event: tk.Event) -> None:
         sel = self.search_results.curselection()
         if not sel:
             self.selected_fdc_id = None
@@ -211,7 +238,7 @@ class DietApp:
         except ValueError:
             self.selected_fdc_id = None
 
-    def add_product(self):
+    def add_product(self) -> None:
         fid = self.selected_fdc_id
         if fid is None:
             messagebox.showerror("Error", "Select a product from the search results")
@@ -226,10 +253,7 @@ class DietApp:
             return
         price_per_gram = price / weight
         target = self.add_table_var.get()
-        if target == "all":
-            widget = self.price_text
-        else:
-            widget = self.raw_price_text
+        widget = self.price_text if target == "all" else self.raw_price_text
         lines = [ln.strip() for ln in widget.get("1.0", tk.END).splitlines() if ln.strip()]
         price_map = {}
         order = []
@@ -241,16 +265,19 @@ class DietApp:
             if key not in price_map:
                 order.append(key)
             price_map[key] = parts[1] if len(parts) > 1 else ""
-
         price_map[str(fid)] = f"{price_per_gram:.6f}"
         if str(fid) not in order:
             order.append(str(fid))
-
         new_lines = [f"{key},{price_map[key]}" for key in order]
         widget.delete("1.0", tk.END)
         widget.insert("1.0", "\n".join(new_lines) + ("\n" if new_lines else ""))
         self.save_setup()
-    def prepare_data(self):
+
+    # --------------------------------------------------
+    # Data preparation
+    # --------------------------------------------------
+    def prepare_data(self) -> bool:
+        # A) Price table for all foods
         price_data_all = {}
         for line in self.price_text.get("1.0", tk.END).strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
@@ -263,6 +290,7 @@ class DietApp:
                 continue
         self.price_data_all = price_data_all
 
+        # B) Price table for raw foods
         raw_price_data = {}
         for line in self.raw_price_text.get("1.0", tk.END).strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
@@ -275,6 +303,7 @@ class DietApp:
                 continue
         self.raw_price_data = raw_price_data
 
+        # C) Nutrient requirements for heat-resistant nutrients
         req_data_heat = {}
         for line in self.heat_req_text.get("1.0", tk.END).strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
@@ -285,10 +314,11 @@ class DietApp:
             except ValueError:
                 continue
             rda = float(parts[1]) if len(parts) >= 2 and parts[1] != "" else None
-            ul  = float(parts[2]) if len(parts) >= 3 and parts[2] != "" else None
+            ul = float(parts[2]) if len(parts) >= 3 and parts[2] != "" else None
             req_data_heat[nutrient_id] = (rda, ul)
         self.req_data_heat = req_data_heat
 
+        # D) Nutrient requirements for non–heat–resistant nutrients
         req_data_nonheat = {}
         for line in self.nonheat_req_text.get("1.0", tk.END).strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
@@ -299,10 +329,11 @@ class DietApp:
             except ValueError:
                 continue
             rda = float(parts[1]) if len(parts) >= 2 and parts[1] != "" else None
-            ul  = float(parts[2]) if len(parts) >= 3 and parts[2] != "" else None
+            ul = float(parts[2]) if len(parts) >= 3 and parts[2] != "" else None
             req_data_nonheat[nutrient_id] = (rda, ul)
         self.req_data_nonheat = req_data_nonheat
 
+        # E) Calorie range
         try:
             self.calorie_min = float(self.calorie_min_entry.get().strip()) if self.calorie_min_entry.get().strip() else None
         except ValueError:
@@ -312,6 +343,7 @@ class DietApp:
         except ValueError:
             self.calorie_max = None
 
+        # F) Product Constraints input (custom constraints: fdc_id, min_g, [max_g])
         product_constraints = {}
         for line in self.product_constraints_text.get("1.0", tk.END).strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
@@ -329,6 +361,7 @@ class DietApp:
                 continue
         self.custom_product_constraints = product_constraints
 
+        # G) Supplements input (format: nutrient_id,price per pill,nutrient per pill)
         supplement_data = {}
         for line in self.supplement_text.get("1.0", tk.END).strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
@@ -343,6 +376,21 @@ class DietApp:
                 continue
         self.supplement_data = supplement_data
 
+        # H) Nutrient Source Constraints input (nutrient_id: fdc_id1,fdc_id2)
+        nutrient_source_constraints = {}
+        for line in self.nutrient_source_constraints_text.get("1.0", tk.END).strip().splitlines():
+            parts = [p.strip() for p in line.split(":", 1)]
+            if len(parts) < 2:
+                continue
+            try:
+                nid = int(parts[0])
+                fdc_ids = [int(fid.strip()) for fid in parts[1].split(",") if fid.strip()]
+                nutrient_source_constraints[nid] = set(fdc_ids)
+            except ValueError:
+                continue
+        self.custom_nutrient_sources = nutrient_source_constraints
+
+        # I) Query the database for food and nutrient data
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         query_foods = "SELECT fdc_id, description FROM food WHERE data_type = 'foundation_food'"
@@ -354,13 +402,14 @@ class DietApp:
             query_fn = "SELECT nutrient_id, amount FROM food_nutrient WHERE fdc_id = ?"
             nutrient_rows = cur.execute(query_fn, (fdc_id,)).fetchall()
             ndict = {}
-            for (nid, amt) in nutrient_rows:
+            for nid, amt in nutrient_rows:
                 ndict[nid] = amt if amt is not None else 0.0
             food_nutrients_dict[fdc_id] = ndict
         conn.close()
         self.food_nutrients_dict = food_nutrients_dict
         self.food_descriptions = food_descriptions
 
+        # J) Determine valid food IDs
         valid_food_ids_all = [fid for fid in food_nutrients_dict if fid in self.price_data_all and len(food_nutrients_dict[fid]) > 0]
         valid_food_ids_raw = [fid for fid in food_nutrients_dict if fid in self.raw_price_data and len(food_nutrients_dict[fid]) > 0]
         if not valid_food_ids_all:
@@ -373,9 +422,15 @@ class DietApp:
             if fdc_id not in valid_food_ids_all:
                 messagebox.showerror("Error", f"FDC_ID {fdc_id} for product constraint not found in All Foods price table.")
                 return False
+        for nid, allowed in self.custom_nutrient_sources.items():
+            for fdc_id in allowed:
+                if fdc_id not in valid_food_ids_all and fdc_id not in valid_food_ids_raw:
+                    messagebox.showerror("Error", f"FDC_ID {fdc_id} for nutrient {nid} source constraint not found in price tables.")
+                    return False
         self.latest_valid_food_ids_cooked = valid_food_ids_all
         self.latest_valid_food_ids_raw = valid_food_ids_raw
 
+        # K) Compute energy per 100g for each food
         all_valid_ids = set(valid_food_ids_all) | set(valid_food_ids_raw)
         food_energy_dict = {}
         for fid in all_valid_ids:
@@ -396,7 +451,11 @@ class DietApp:
             food_energy_dict[fid] = kcal
         self.food_energy_dict = food_energy_dict
         return True
-    def build_and_solve_lp(self, excluded_nutrients=set(), include_supplements=False):
+
+    # --------------------------------------------------
+    # Linear programming solver
+    # --------------------------------------------------
+    def build_and_solve_lp(self, *, exclude_rda=set(), exclude_ul=set(), include_supplements=False):
         price_data_all = self.price_data_all
         raw_price_data = self.raw_price_data
         food_energy_dict = self.food_energy_dict
@@ -410,109 +469,95 @@ class DietApp:
             req_data_heat.pop(eid, None)
             req_data_nonheat.pop(eid, None)
 
+        nutrient_source_constraints = self.custom_nutrient_sources
         problem = pulp.LpProblem("DietMinCost", pulp.LpMinimize)
 
-        x_cooked = { fid: pulp.LpVariable(f"x_cooked_{fid}", lowBound=0, cat=pulp.LpInteger)
-                     for fid in valid_food_ids_all }
-        x_raw = { fid: pulp.LpVariable(f"x_raw_{fid}", lowBound=0, cat=pulp.LpInteger)
-                  for fid in valid_food_ids_raw }
-
-        y_cooked = { fid: pulp.LpVariable(f"y_cooked_{fid}", cat=pulp.LpBinary)
-                     for fid in valid_food_ids_all }
-        y_raw = { fid: pulp.LpVariable(f"y_raw_{fid}", cat=pulp.LpBinary)
-                  for fid in valid_food_ids_raw }
-
-        M_food = 10000
-        for fid in valid_food_ids_all:
-            problem += (x_cooked[fid] >= 2 * y_cooked[fid])
-            problem += (x_cooked[fid] <= M_food * y_cooked[fid])
-        for fid in valid_food_ids_raw:
-            problem += (x_raw[fid] >= 2 * y_raw[fid])
-            problem += (x_raw[fid] <= M_food * y_raw[fid])
-
-        for fid in valid_food_ids_raw:
-            has_nonheat = any(food_nutrients_dict[fid].get(nutr_id, 0) > 0 for nutr_id in req_data_nonheat.keys())
-            if not has_nonheat:
-                problem += (y_raw[fid] == 0)
-
+        x_cooked = {fid: pulp.LpVariable(f"x_cooked_{fid}", lowBound=0, cat=pulp.LpContinuous)
+                    for fid in valid_food_ids_all}
+        x_raw = {fid: pulp.LpVariable(f"x_raw_{fid}", lowBound=0, cat=pulp.LpContinuous)
+                  for fid in valid_food_ids_raw}
         x_supp = {}
         if include_supplements:
             for nutr_id, (supp_price, supp_nutrient) in self.supplement_data.items():
                 x_supp[nutr_id] = pulp.LpVariable(f"x_supp_{nutr_id}", lowBound=0, cat=pulp.LpInteger)
 
+        # Combined product constraints across raw and cooked forms
+        for fid, (min_g, max_g) in self.custom_product_constraints.items():
+            expr = None
+            if fid in x_cooked and fid in x_raw:
+                expr = x_cooked[fid] + x_raw[fid]
+            elif fid in x_cooked:
+                expr = x_cooked[fid]
+            elif fid in x_raw:
+                expr = x_raw[fid]
+            else:
+                continue
+            problem += expr >= min_g, f"MinTotal_{fid}"
+            problem += expr <= max_g, f"MaxTotal_{fid}"
+
         problem += (
-            pulp.lpSum([price_data_all[fid] * x_cooked[fid] for fid in valid_food_ids_all]) +
-            pulp.lpSum([raw_price_data[fid] * x_raw[fid] for fid in valid_food_ids_raw]) +
-            (pulp.lpSum([self.supplement_data[nid][0] * x_supp[nid] for nid in x_supp]) if include_supplements else 0)
-        )
+            pulp.lpSum(price_data_all[fid] * x_cooked[fid] for fid in valid_food_ids_all) +
+            pulp.lpSum(raw_price_data[fid] * x_raw[fid] for fid in valid_food_ids_raw) +
+            (pulp.lpSum(self.supplement_data[nid][0] * x_supp[nid] for nid in x_supp) if include_supplements else 0)
+        ), "TotalCost"
 
         total_cal_expr = (
-            pulp.lpSum([(food_energy_dict[fid] / 100.0) * x_cooked[fid] for fid in valid_food_ids_all]) +
-            pulp.lpSum([(food_energy_dict[fid] / 100.0) * x_raw[fid] for fid in valid_food_ids_raw])
+            pulp.lpSum((food_energy_dict[fid] / 100.0) * x_cooked[fid] for fid in valid_food_ids_all) +
+            pulp.lpSum((food_energy_dict[fid] / 100.0) * x_raw[fid] for fid in valid_food_ids_raw)
         )
         if self.calorie_min and self.calorie_min > 0:
-            problem += (total_cal_expr >= self.calorie_min)
+            problem += total_cal_expr >= self.calorie_min, "MinCalories"
         if self.calorie_max and self.calorie_max > 0:
-            problem += (total_cal_expr <= self.calorie_max)
+            problem += total_cal_expr <= self.calorie_max, "MaxCalories"
 
-        for nutr_id, (rda, ul) in req_data_heat.items():
-            if nutr_id in excluded_nutrients:
+        # A) Heat-resistant nutrients
+        for nutr_id, (orig_rda, orig_ul) in req_data_heat.items():
+            rda = orig_rda if nutr_id not in exclude_rda else None
+            ul = orig_ul if nutr_id not in exclude_ul else None
+            if rda is None and ul is None:
                 continue
             nutr_sum = []
             for fid in valid_food_ids_all:
-                if nutr_id == 1004:
-                    amt = food_nutrients_dict[fid].get(1004, 0.0)
-                    if amt == 0.0:
-                        amt = food_nutrients_dict[fid].get(1085, 0.0)
-                else:
-                    amt = food_nutrients_dict[fid].get(nutr_id, 0.0)
-                nutr_sum.append((amt/100.0) * x_cooked[fid])
+                if nutr_id in nutrient_source_constraints and fid not in nutrient_source_constraints[nutr_id]:
+                    continue
+                amt = food_nutrients_dict[fid].get(nutr_id, 0.0)
+                if nutr_id == 1004 and amt == 0.0:
+                    amt = food_nutrients_dict[fid].get(1085, 0.0)
+                nutr_sum.append((amt / 100.0) * x_cooked[fid])
             for fid in valid_food_ids_raw:
-                if nutr_id == 1004:
-                    amt = food_nutrients_dict[fid].get(1004, 0.0)
-                    if amt == 0.0:
-                        amt = food_nutrients_dict[fid].get(1085, 0.0)
-                else:
-                    amt = food_nutrients_dict[fid].get(nutr_id, 0.0)
-                nutr_sum.append((amt/100.0) * x_raw[fid])
+                if nutr_id in nutrient_source_constraints and fid not in nutrient_source_constraints[nutr_id]:
+                    continue
+                amt = food_nutrients_dict[fid].get(nutr_id, 0.0)
+                if nutr_id == 1004 and amt == 0.0:
+                    amt = food_nutrients_dict[fid].get(1085, 0.0)
+                nutr_sum.append((amt / 100.0) * x_raw[fid])
             if include_supplements and nutr_id in x_supp:
                 nutr_sum.append(self.supplement_data[nutr_id][1] * x_supp[nutr_id])
             if rda is not None:
-                problem += (pulp.lpSum(nutr_sum) >= rda)
+                problem += pulp.lpSum(nutr_sum) >= rda, f"Nutrient_{nutr_id}_RDA_heat"
             if ul is not None:
-                problem += (pulp.lpSum(nutr_sum) <= ul)
+                problem += pulp.lpSum(nutr_sum) <= ul, f"Nutrient_{nutr_id}_UL_heat"
 
-        for nutr_id, (rda, ul) in req_data_nonheat.items():
-            if nutr_id in excluded_nutrients:
+        # B) Non-heat-resistant nutrients
+        for nutr_id, (orig_rda, orig_ul) in req_data_nonheat.items():
+            rda = orig_rda if nutr_id not in exclude_rda else None
+            ul = orig_ul if nutr_id not in exclude_ul else None
+            if rda is None and ul is None:
                 continue
             nutr_sum = []
             for fid in valid_food_ids_raw:
-                if nutr_id == 1004:
-                    amt = food_nutrients_dict[fid].get(1004, 0.0)
-                    if amt == 0.0:
-                        amt = food_nutrients_dict[fid].get(1085, 0.0)
-                else:
-                    amt = food_nutrients_dict[fid].get(nutr_id, 0.0)
-                nutr_sum.append((amt/100.0) * x_raw[fid])
+                if nutr_id in nutrient_source_constraints and fid not in nutrient_source_constraints[nutr_id]:
+                    continue
+                amt = food_nutrients_dict[fid].get(nutr_id, 0.0)
+                if nutr_id == 1004 and amt == 0.0:
+                    amt = food_nutrients_dict[fid].get(1085, 0.0)
+                nutr_sum.append((amt / 100.0) * x_raw[fid])
             if include_supplements and nutr_id in x_supp:
                 nutr_sum.append(self.supplement_data[nutr_id][1] * x_supp[nutr_id])
             if rda is not None:
-                problem += (pulp.lpSum(nutr_sum) >= rda)
+                problem += pulp.lpSum(nutr_sum) >= rda, f"Nutrient_{nutr_id}_RDA_nonheat"
             if ul is not None:
-                problem += (pulp.lpSum(nutr_sum) <= ul)
-
-        for fdc_id, (min_val, max_val) in self.custom_product_constraints.items():
-            combined_usage = None
-            if fdc_id in x_cooked and fdc_id in x_raw:
-                combined_usage = x_cooked[fdc_id] + x_raw[fdc_id]
-            elif fdc_id in x_cooked:
-                combined_usage = x_cooked[fdc_id]
-            elif fdc_id in x_raw:
-                combined_usage = x_raw[fdc_id]
-            if combined_usage is not None:
-                if min_val > 0:
-                    problem += (combined_usage >= min_val)
-                problem += (combined_usage <= max_val)
+                problem += pulp.lpSum(nutr_sum) <= ul, f"Nutrient_{nutr_id}_UL_nonheat"
 
         solution = problem.solve(pulp.PULP_CBC_CMD(msg=0))
         status_str = pulp.LpStatus[solution]
@@ -530,13 +575,44 @@ class DietApp:
                 pills = x_supp[nutr_id].varValue or 0.0
                 total_cost += pills * self.supplement_data[nutr_id][0]
         return status_str, total_cost, x_cooked, x_raw, x_supp
-    def generate_diet(self):
+
+    def find_infeasible_each(self) -> None:
+        tests = []
+        for nid, (rda, ul) in self.req_data_heat.items():
+            if rda is not None:
+                tests.append((nid, "RDA_heat"))
+            if ul is not None:
+                tests.append((nid, "UL_heat"))
+        for nid, (rda, ul) in self.req_data_nonheat.items():
+            if rda is not None:
+                tests.append((nid, "RDA_nonheat"))
+            if ul is not None:
+                tests.append((nid, "UL_nonheat"))
+        print("Testing each constraint individually…")
+        for nid, typ in tests:
+            drop_rda = typ.startswith("RDA")
+            drop_ul = typ.startswith("UL")
+            status, *_ = self.build_and_solve_lp(
+                exclude_rda={nid} if drop_rda else set(),
+                exclude_ul={nid} if drop_ul else set(),
+                include_supplements=False,
+            )
+            if status == "Optimal":
+                print(f" ✓ Dropping {typ} for nutrient {nid} → feasible")
+            else:
+                print(f" ✗ Still infeasible dropping {typ} for nutrient {nid}")
+
+    # --------------------------------------------------
+    # Generate Base Diet (without supplements)
+    # --------------------------------------------------
+    def generate_diet(self) -> None:
         if not self.prepare_data():
             return
         self.save_setup()
         status, cost, x_cooked, x_raw, _ = self.build_and_solve_lp(include_supplements=False)
         self.output_text.delete("1.0", tk.END)
         if status != "Optimal":
+            self.find_infeasible_each()
             self.output_text.insert("end", f"No optimal solution found. Solver status: {status}\n")
             return
         self.solution_status = status
@@ -560,7 +636,10 @@ class DietApp:
                 desc = self.food_descriptions.get(fid, "")
                 self.output_text.insert("end", f"  FDC_ID={fid} ({desc}), grams={grams:.0f}, cost=${item_cost:.2f}\n")
 
-    def generate_diet_with_supplements(self):
+    # --------------------------------------------------
+    # Generate Diet with Supplements
+    # --------------------------------------------------
+    def generate_diet_with_supplements(self) -> None:
         if not self.prepare_data():
             return
         self.save_setup()
@@ -615,7 +694,10 @@ class DietApp:
                     self.output_text.insert("end", f"  Nutrient {nutr_id} supplement, pills={pills:.0f}, cost=${cost_val:.2f}\n")
         self.output_text.insert("end", f"\nTotal cost (including supplements) = ${chosen_cost:.2f}\n")
 
-    def generate_report(self):
+    # --------------------------------------------------
+    # Generate Report (CSV)
+    # --------------------------------------------------
+    def generate_report(self) -> None:
         if self.solution_status != "Optimal":
             messagebox.showwarning("Warning", "No optimal solution to report. Generate a diet first.")
             return
@@ -631,9 +713,11 @@ class DietApp:
         for nid in all_nutr_ids:
             headers.append(f"Nutr_{nid}")
         rows = []
-        totals = {"Raw": {"amount": 0.0, "cost": 0.0, "energy": 0.0, "nutr": {nid: 0.0 for nid in all_nutr_ids}},
-                  "Cooked": {"amount": 0.0, "cost": 0.0, "energy": 0.0, "nutr": {nid: 0.0 for nid in all_nutr_ids}},
-                  "Supplement": {"amount": 0.0, "cost": 0.0, "energy": 0.0, "nutr": {nid: 0.0 for nid in all_nutr_ids}}}
+        totals = {
+            "Raw": {"amount": 0.0, "cost": 0.0, "energy": 0.0, "nutr": {nid: 0.0 for nid in all_nutr_ids}},
+            "Cooked": {"amount": 0.0, "cost": 0.0, "energy": 0.0, "nutr": {nid: 0.0 for nid in all_nutr_ids}},
+            "Supplement": {"amount": 0.0, "cost": 0.0, "energy": 0.0, "nutr": {nid: 0.0 for nid in all_nutr_ids}},
+        }
         for fid, var in self.solution_x_raw.items():
             amount = var.varValue or 0.0
             if amount <= 1e-6:
@@ -643,7 +727,7 @@ class DietApp:
             nutr_values = []
             for nid in all_nutr_ids:
                 amt = self.food_nutrients_dict.get(fid, {}).get(nid, 0.0)
-                nutr_values.append((amt/100.0)*amount)
+                nutr_values.append((amt / 100.0) * amount)
             row = ["Raw", fid, self.food_descriptions.get(fid, ""), amount, cost_val, energy_val] + nutr_values
             rows.append(row)
             totals["Raw"]["amount"] += amount
@@ -660,7 +744,7 @@ class DietApp:
             nutr_values = []
             for nid in all_nutr_ids:
                 amt = self.food_nutrients_dict.get(fid, {}).get(nid, 0.0)
-                nutr_values.append((amt/100.0)*amount)
+                nutr_values.append((amt / 100.0) * amount)
             row = ["Cooked", fid, self.food_descriptions.get(fid, ""), amount, cost_val, energy_val] + nutr_values
             rows.append(row)
             totals["Cooked"]["amount"] += amount
@@ -673,7 +757,7 @@ class DietApp:
             if pills <= 1e-6:
                 continue
             cost_val = pills * self.supplement_data[nutr_id][0]
-            nutr_list = [0]*len(all_nutr_ids)
+            nutr_list = [0] * len(all_nutr_ids)
             if nutr_id in all_nutr_ids:
                 index = all_nutr_ids.index(nutr_id)
                 nutr_list[index] = pills * self.supplement_data[nutr_id][1]
@@ -707,11 +791,13 @@ class DietApp:
         except Exception as e:
             messagebox.showerror("Error", f"Could not write report: {e}")
 
-def main():
+
+def main() -> None:
     os.makedirs(WORKDIR, exist_ok=True)
     root = tk.Tk()
     app = DietApp(root)
     root.mainloop()
+
 
 if __name__ == "__main__":
     main()
