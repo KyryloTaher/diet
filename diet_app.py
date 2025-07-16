@@ -30,6 +30,7 @@ class DietApp:
         self.calorie_max = None
         self.custom_product_constraints = {}
         self.supplement_data = {}
+        self.selected_fdc_id = None
 
         main_frame = ttk.Frame(root, padding="10 10 10 10")
         main_frame.grid(row=0, column=0, sticky="nsew")
@@ -56,6 +57,34 @@ class DietApp:
         self.right_frame.rowconfigure(1, weight=1)
 
         row = 0
+        ttk.Label(self.left_scrollable_frame, text="Search Product:").grid(row=row, column=0, sticky="w")
+        row += 1
+        search_frame = ttk.Frame(self.left_scrollable_frame)
+        search_frame.grid(row=row, column=0, sticky="w")
+        self.search_entry = ttk.Entry(search_frame, width=30)
+        self.search_entry.grid(row=0, column=0, padx=5, pady=2)
+        ttk.Button(search_frame, text="Search", command=self.search_products).grid(row=0, column=1, padx=5)
+        row += 1
+        self.search_results = tk.Listbox(self.left_scrollable_frame, width=40, height=5)
+        self.search_results.grid(row=row, column=0, sticky="w")
+        self.search_results.bind("<<ListboxSelect>>", self.on_result_select)
+        row += 1
+        ttk.Label(self.left_scrollable_frame, text="Price ($) and Weight (g):").grid(row=row, column=0, sticky="w")
+        row += 1
+        pw_frame = ttk.Frame(self.left_scrollable_frame)
+        pw_frame.grid(row=row, column=0, sticky="w")
+        self.price_entry = ttk.Entry(pw_frame, width=10)
+        self.price_entry.grid(row=0, column=0, padx=5)
+        self.weight_entry = ttk.Entry(pw_frame, width=10)
+        self.weight_entry.grid(row=0, column=1, padx=5)
+        row += 1
+        self.add_table_var = tk.StringVar(value="all")
+        opt_frame = ttk.Frame(self.left_scrollable_frame)
+        opt_frame.grid(row=row, column=0, sticky="w")
+        ttk.Radiobutton(opt_frame, text="All Foods", variable=self.add_table_var, value="all").grid(row=0, column=0, padx=5)
+        ttk.Radiobutton(opt_frame, text="Raw Foods", variable=self.add_table_var, value="raw").grid(row=0, column=1, padx=5)
+        ttk.Button(opt_frame, text="Add Product", command=self.add_product).grid(row=0, column=2, padx=5)
+        row += 1
         ttk.Label(self.left_scrollable_frame, text="Price Table (All Foods) (fdc_id,price_per_gram):").grid(row=row, column=0, sticky="w")
         row += 1
         self.price_text = tk.Text(self.left_scrollable_frame, width=40, height=8)
@@ -149,6 +178,66 @@ class DietApp:
             self.supplement_text.insert("1.0", setup.get("supplement_text", ""))
         except Exception as e:
             print(f"Could not load setup: {e}")
+
+    def search_products(self):
+        query = self.search_entry.get().strip()
+        if not query:
+            return
+        conn = sqlite3.connect(DB_FILENAME)
+        cur = conn.cursor()
+        like_query = f"%{query}%"
+        rows = cur.execute(
+            "SELECT fdc_id, description FROM food WHERE description LIKE ? ORDER BY description LIMIT 50",
+            (like_query,),
+        ).fetchall()
+        conn.close()
+        self.search_results.delete(0, tk.END)
+        for fid, desc in rows:
+            self.search_results.insert(tk.END, f"{fid}: {desc}")
+
+    def on_result_select(self, event):
+        sel = self.search_results.curselection()
+        if not sel:
+            self.selected_fdc_id = None
+            return
+        text = self.search_results.get(sel[0])
+        try:
+            fid = int(text.split(":", 1)[0])
+            self.selected_fdc_id = fid
+        except ValueError:
+            self.selected_fdc_id = None
+
+    def add_product(self):
+        fid = self.selected_fdc_id
+        if fid is None:
+            messagebox.showerror("Error", "Select a product from the search results")
+            return
+        try:
+            price = float(self.price_entry.get())
+            weight = float(self.weight_entry.get())
+            if weight <= 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Enter valid price and weight")
+            return
+        price_per_gram = price / weight
+        target = self.add_table_var.get()
+        if target == "all":
+            widget = self.price_text
+        else:
+            widget = self.raw_price_text
+        lines = [ln.strip() for ln in widget.get("1.0", tk.END).splitlines() if ln.strip()]
+        updated = False
+        for i, ln in enumerate(lines):
+            parts = [p.strip() for p in ln.split(",")]
+            if parts and parts[0] == str(fid):
+                lines[i] = f"{fid},{price_per_gram:.6f}"
+                updated = True
+        if not updated:
+            lines.append(f"{fid},{price_per_gram:.6f}")
+        widget.delete("1.0", tk.END)
+        widget.insert("1.0", "\n".join(lines) + ("\n" if lines else ""))
+        self.save_setup()
     def prepare_data(self):
         price_data_all = {}
         for line in self.price_text.get("1.0", tk.END).strip().splitlines():
