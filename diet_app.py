@@ -231,16 +231,24 @@ class DietApp:
         else:
             widget = self.raw_price_text
         lines = [ln.strip() for ln in widget.get("1.0", tk.END).splitlines() if ln.strip()]
-        updated = False
-        for i, ln in enumerate(lines):
+        price_map = {}
+        order = []
+        for ln in lines:
             parts = [p.strip() for p in ln.split(",")]
-            if parts and parts[0] == str(fid):
-                lines[i] = f"{fid},{price_per_gram:.6f}"
-                updated = True
-        if not updated:
-            lines.append(f"{fid},{price_per_gram:.6f}")
+            if not parts:
+                continue
+            key = parts[0]
+            if key not in price_map:
+                order.append(key)
+            price_map[key] = parts[1] if len(parts) > 1 else ""
+
+        price_map[str(fid)] = f"{price_per_gram:.6f}"
+        if str(fid) not in order:
+            order.append(str(fid))
+
+        new_lines = [f"{key},{price_map[key]}" for key in order]
         widget.delete("1.0", tk.END)
-        widget.insert("1.0", "\n".join(lines) + ("\n" if lines else ""))
+        widget.insert("1.0", "\n".join(new_lines) + ("\n" if new_lines else ""))
         self.save_setup()
     def prepare_data(self):
         price_data_all = {}
