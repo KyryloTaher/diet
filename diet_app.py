@@ -83,7 +83,10 @@ class DietApp:
         self.search_results.grid(row=row, column=0, sticky="w")
         self.search_results.bind("<<ListboxSelect>>", self.on_result_select)
         row += 1
-        ttk.Label(self.left_scrollable_frame, text="Price ($) and Weight (g):").grid(row=row, column=0, sticky="w")
+        ttk.Label(
+            self.left_scrollable_frame,
+            text="Price ($) and Weight (g) (leave weight blank for price per gram):",
+        ).grid(row=row, column=0, sticky="w")
         row += 1
         pw_frame = ttk.Frame(self.left_scrollable_frame)
         pw_frame.grid(row=row, column=0, sticky="w")
@@ -243,15 +246,23 @@ class DietApp:
         if fid is None:
             messagebox.showerror("Error", "Select a product from the search results")
             return
+        price_str = self.price_entry.get().strip()
+        weight_str = self.weight_entry.get().strip()
         try:
-            price = float(self.price_entry.get())
-            weight = float(self.weight_entry.get())
-            if weight <= 0:
-                raise ValueError
+            price = float(price_str)
+            if weight_str:
+                weight = float(weight_str)
+                if weight <= 0:
+                    raise ValueError
+                price_per_gram = price / weight
+            else:
+                price_per_gram = price
         except ValueError:
-            messagebox.showerror("Error", "Enter valid price and weight")
+            messagebox.showerror(
+                "Error",
+                "Enter valid numeric price and weight (weight optional)",
+            )
             return
-        price_per_gram = price / weight
         target = self.add_table_var.get()
         widget = self.price_text if target == "all" else self.raw_price_text
         lines = [ln.strip() for ln in widget.get("1.0", tk.END).splitlines() if ln.strip()]
